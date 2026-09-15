@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bone Fracture Predictor</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 480px;
+    margin: 60px auto;
+    text-align: center;
+    color: #222;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.sub { color: #666; margin-top: 0; }
+  #dropzone {
+    border: 2px dashed #999;
+    border-radius: 10px;
+    padding: 30px;
+    margin-top: 20px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #dropzone.dragover { border-color: #3b82f6; background: #eff6ff; }
+  #preview {
+    max-width: 100%;
+    max-height: 300px;
+    margin-top: 16px;
+    border-radius: 8px;
+    display: none;
+  }
+  #result {
+    margin-top: 20px;
+    font-size: 1.2rem;
+    font-weight: 600;
+    min-height: 1.5em;
+  }
+  #result.fracture { color: #dc2626; }
+  #result.no-fracture { color: #16a34a; }
+  #confidence { color: #666; font-size: 0.9rem; }
+  input[type="file"] { display: none; }
+  #status { color: #666; font-size: 0.9rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Bone Fracture Predictor</h1>
+<p class="sub">Upload an X-ray image to check for a fracture</p>
+
+<div id="dropzone">
+  <p>Click or drag an image here</p>
+  <input type="file" id="fileInput" accept="image/*">
+</div>
+
+<img id="preview" alt="X-ray preview">
+<div id="status"></div>
+<div id="result"></div>
+<div id="confidence"></div>
+
+<script>
+// ---------------------------------------------------------------
+// This version sends the image to a Flask backend (/predict), which
+// loads the .keras model with TensorFlow/Python and returns the
+// prediction as JSON. No TF.js or client-side model loading needed.
+// ---------------------------------------------------------------
+
+const statusEl = document.getElementById("status");
+const resultEl = document.getElementById("result");
+const confidenceEl = document.getElementById("confidence");
+const previewEl = document.getElementById("preview");
+const dropzone = document.getElementById("dropzone");
+const fileInput = document.getElementById("fileInput");
+
+dropzone.addEventListener("click", () => fileInput.click());
+
+dropzone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  dropzone.classList.add("dragover");
+});
+dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+dropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropzone.classList.remove("dragover");
+  if (e.dataTransfer.files.length) {
+    handleFile(e.dataTransfer.files[0]);
+  }
+});
+
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    previewEl.src = e.target.result;
+    previewEl.style.display = "block";
+  };
+  reader.readAsDataURL(file);
+  predict(file);
+}
+
+async function predict(file) {
+  resultEl.textContent = "";
+  resultEl.className = "";
+  confidenceEl.textContent = "";
+  statusEl.textContent = "Predicting...";
+
+  const formData = new FormData();
+  formData.append("image", file);
+
+  try {
+    const response = await fetch("/predict", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      statusEl.textContent = data.error || "Prediction failed.";
+      return;
+    }
+
+    if (data.label === "Fracture") {
+      resultEl.textContent = "Prediction: Fracture";
+      resultEl.className = "fracture";
+    } else {
+      resultEl.textContent = "Prediction: No Fracture";
+      resultEl.className = "no-fracture";
+    }
+    confidenceEl.textContent = `Raw score: ${data.score.toFixed(4)}`;
+    statusEl.textContent = "Done.";
+  } catch (err) {
+    statusEl.textContent = "Error contacting server.";
+    console.error(err);
+  }
+}
+</script>
+
+</body>
+</html>
